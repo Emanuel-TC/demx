@@ -3,7 +3,7 @@ name: Run Daily News Briefing
 on:
   schedule:
     # Se ejecuta todos los días a las 07:30 UTC (Ajusta según tu zona horaria)
-    - cron: '30 7 * * *'
+    - cron: '30 8 * * *'
   workflow_dispatch: # Te permite ejecutarlo manualmente desde la web de GitHub para hacer pruebas
 
 jobs:
