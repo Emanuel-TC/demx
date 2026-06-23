@@ -14,22 +14,25 @@ class Config:
         """Asegura que todas las variables necesarias estén presentes."""
         missing = [k for k, v in cls.__dict__.items() if not k.startswith("__") and not v and not callable(v)]
         if missing:
-            raise ValueError(map(f"Faltan las siguientes variables de entorno: {', '.join(missing)}"))
+            raise ValueError(f"Faltan las siguientes variables de entorno: {', '.join(missing)}")
 
 
 class TavilyFetcher:
-    """Responsable de buscar información fresca y relevante en la web."""
+    """Responsable de buscar efemérides y datos culturales en la web."""
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.url = "https://api.tavily.com/search"
 
-    def search_country_news(self, country: str) -> list:
-        """Busca hechos, efemérides o noticias relevantes del día para un país."""
+    def search_country_culture(self, country: str) -> list:
+        """Busca efemérides, curiosidades y eventos históricos positivos del día."""
+        # Cambiamos la búsqueda para evitar noticias duras y buscar cultura/historia
+        query = f"On this day positive historical events, cultural facts, or interesting curiosities today in {country}"
+        
         payload = {
             "api_key": self.api_key,
-            "query": f"important news events or historical facts today in {country}",
+            "query": query,
             "search_depth": "advanced",
-            "max_results": 3
+            "max_results": 4 # Aumentamos un poco para darle más opciones a Gemini
         }
         try:
             response = requests.post(self.url, json=payload)
@@ -46,22 +49,27 @@ class BriefingGenerator:
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
 
     def create_briefing(self, mexico_data: list, germany_data: list) -> str:
-        """Utiliza Gemini para sintetizar los resultados en el formato solicitado."""
+        """Utiliza Gemini para sintetizar los resultados enfocándose en historia y cultura."""
         prompt = f"""
-        Eres un asistente de noticias diario. Tu tarea es crear un 'Daily Briefing' muy breve y directo utilizando los datos proporcionados.
+        Eres un curador de contenido cultural e histórico. Tu tarea es crear un 'Daily Briefing' breve, fascinante y positivo. 
+        ESTÁ ESTRICTAMENTE PROHIBIDO incluir noticias amarillistas, políticas de actualidad, tragedias o crímenes.
         
-        Datos de México: {json.dumps(mexico_data)}
-        Datos de Alemania: {json.dumps(germany_data)}
+        Datos extraídos para México: {json.dumps(mexico_data)}
+        Datos extraídos para Alemania: {json.dumps(germany_data)}
         
         Formato requerido:
-        Genera una o dos secciones breves. Para cada sección usa exactamente esta estructura:
-        🌟 **[País]**
-        [Hecho o noticia relevante del día redactada de forma amigable]
-        🔗 [Enlace] (Usa el enlace original más relevante de los datos aportados, no inventes URLs)
+        Genera dos secciones breves. Para cada sección usa esta estructura:
         
-        Nota para Alemania: Redacta la explicación en español, pero incluye el término o frase clave original en alemán para ayudar a practicar el idioma (nivel básico/intermedio).
+        🌟 **México**
+        [Menciona qué efeméride se conmemora hoy o un dato histórico/cultural muy curioso basado en los datos. Agrega contexto interesante: menciona si hay un monumento, una calle, una plaza, o cómo este hecho impactó la historia de forma positiva. Usa un tono inspirador y conversacional.]
+        🔗 [Enlace de la fuente]
         
-        Mantén el mensaje total corto, ideal para leer en menos de 30 segundos en el móvil. No agregues saludos ni despedidas corporativas.
+        🌟 **Alemania**
+        [Comparte una curiosidad cultural, un evento histórico positivo o un dato de interés del día. 
+        Redacta la explicación en español, pero incluye el término o frase clave original en alemán. Asegúrate de explicar la estructura o el significado literal de esa palabra en alemán de forma muy sencilla, pensada para alguien con un nivel A1 que está empezando a aprender el idioma.]
+        🔗 [Enlace de la fuente]
+        
+        Mantén el mensaje total corto, ameno y directo al grano.
         """
         
         payload = {
@@ -89,7 +97,8 @@ class TelegramNotifier:
         payload = {
             "chat_id": self.chat_id,
             "text": message,
-            "parse_mode": "Markdown"
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True # Desactiva las vistas previas gigantes de los links
         }
         try:
             response = requests.post(self.url, json=payload)
@@ -100,23 +109,21 @@ class TelegramNotifier:
 
 
 def main():
-    # 1. Validar configuración
     Config.validate()
     
-    # 2. Inicializar servicios
     fetcher = TavilyFetcher(Config.TAVILY_API_KEY)
     generator = BriefingGenerator(Config.GEMINI_API_KEY)
     notifier = TelegramNotifier(Config.TELEGRAM_TOKEN, Config.TELEGRAM_CHAT_ID)
     
-    # 3. Ejecutar flujo
-    print("Buscando noticias...")
-    mx_news = fetcher.search_country_news("Mexico")
-    de_news = fetcher.search_country_news("Germany")
+    print("Buscando efemérides y curiosidades...")
+    # Llamamos al nuevo método enfocado en cultura
+    mx_news = fetcher.search_country_culture("Mexico")
+    de_news = fetcher.search_country_culture("Germany")
     
     print("Sintetizando información...")
     briefing = generator.create_briefing(mx_news, de_news)
     
-    print("Enviando notificación...")
+    print("Enviando notificación a Telegram...")
     notifier.send(briefing)
 
 if __name__ == "__main__":
