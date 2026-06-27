@@ -2,8 +2,9 @@ name: Run Daily News Briefing
 
 on:
   schedule:
-    # Se ejecuta todos los días a las 07:30 UTC (Ajusta según tu zona horaria)
-    - cron: '30 8 * * *'
+    # 05:23 UTC equivale a las 07:23 CEST (hora local).
+    # Usamos el minuto 23 para evitar las demoras de las "horas en punto" y "medias horas" de GitHub.
+    - cron: '23 5 * * *'
   workflow_dispatch: # Te permite ejecutarlo manualmente desde la web de GitHub para hacer pruebas
 
 jobs:

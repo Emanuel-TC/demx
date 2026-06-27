@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+from datetime import datetime
 
 class Config:
     """Gestiona las credenciales y variables de entorno."""
@@ -18,58 +19,75 @@ class Config:
 
 
 class TavilyFetcher:
-    """Responsable de buscar efemérides y datos culturales en la web."""
+    """Responsable de buscar efemérides y datos culturales filtrados por la fecha actual."""
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.url = "https://api.tavily.com/search"
 
-    def search_country_culture(self, country: str) -> list:
-        """Busca efemérides, curiosidades y eventos históricos positivos del día."""
-        # Cambiamos la búsqueda para evitar noticias duras y buscar cultura/historia
-        query = f"On this day positive historical events, cultural facts, or interesting curiosities today in {country}"
+    def _get_current_date_str(self) -> str:
+        """Calcula el día y mes actual en inglés para optimizar la búsqueda."""
+        months = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+        now = datetime.now()
+        # Nota: Al ejecutarse a las 04:23 UTC / 06:23 CEST, coincide perfectamente en el mismo día calendario.
+        return f"{months[now.month - 1]} {now.day}"
+
+    def search_country_culture(self, country: str) -> tuple[list, str]:
+        """Busca efemérides y curiosidades históricas estrictamente vinculadas al día de hoy."""
+        date_str = self._get_current_date_str()
+        
+        # Anclamos la búsqueda exigiendo que ocurra específicamente en la fecha de hoy
+        query = f"Historical events, cultural facts, or positive curiosities happening specifically on {date_str} in {country}"
         
         payload = {
             "api_key": self.api_key,
             "query": query,
             "search_depth": "advanced",
-            "max_results": 4 # Aumentamos un poco para darle más opciones a Gemini
+            "max_results": 4
         }
         try:
             response = requests.post(self.url, json=payload)
             response.raise_for_status()
-            return response.json().get("results", [])
+            return response.json().get("results", []), date_str
         except requests.exceptions.RequestException as e:
             print(f"Error al buscar en Tavily para {country}: {e}")
-            return []
+            return [], date_str
 
 
 class BriefingGenerator:
-    """Responsable de transformar datos crudos en un formato breve y amigable."""
+    """Responsable de transformar datos crudos en un formato breve, bilingüe y amigable."""
     def __init__(self, api_key: str):
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
 
-    def create_briefing(self, mexico_data: list, germany_data: list) -> str:
-        """Utiliza Gemini para sintetizar los resultados enfocándose en historia y cultura."""
+    def create_briefing(self, mexico_data: list, germany_data: list, date_str: str) -> str:
+        """Utiliza Gemini para sintetizar los resultados asegurando la coherencia con la fecha actual y formato bilingüe."""
         prompt = f"""
-        Eres un curador de contenido cultural e histórico. Tu tarea es crear un 'Daily Briefing' breve, fascinante y positivo. 
+        Eres un curador de contenido cultural e histórico. Tu tarea es crear un 'Daily Briefing' breve, fascinante y positivo.
+        
+        CRÍTICO: Hoy es exactamente {date_str}. Asegúrate de que las efemérides o datos seleccionados correspondan a los eventos celebrados o acontecidos en este día específico ({date_str}). Descarta cualquier resultado que pertenezca a otra fecha o que sea un resumen general de noticias actuales.
+        
         ESTÁ ESTRICTAMENTE PROHIBIDO incluir noticias amarillistas, políticas de actualidad, tragedias o crímenes.
         
         Datos extraídos para México: {json.dumps(mexico_data)}
         Datos extraídos para Alemania: {json.dumps(germany_data)}
         
         Formato requerido:
-        Genera dos secciones breves. Para cada sección usa esta estructura:
+        Genera dos secciones. Para cada sección, redacta el contenido primero en español y justo debajo su traducción exacta y natural al inglés.
+        Usa estrictamente esta estructura:
         
         🌟 **México**
-        [Menciona qué efeméride se conmemora hoy o un dato histórico/cultural muy curioso basado en los datos. Agrega contexto interesante: menciona si hay un monumento, una calle, una plaza, o cómo este hecho impactó la historia de forma positiva. Usa un tono inspirador y conversacional.]
+        🇪🇸 [Menciona qué efeméride se conmemora hoy ({date_str}) o un dato histórico/cultural curioso de esa fecha. Agrega contexto sobre monumentos, calles o impacto positivo. Tono inspirador.]
+        🇬🇧 [Traducción al inglés del texto anterior.]
         🔗 [Enlace de la fuente]
         
         🌟 **Alemania**
-        [Comparte una curiosidad cultural, un evento histórico positivo o un dato de interés del día. 
-        Redacta la explicación en español, pero incluye el término o frase clave original en alemán. Asegúrate de explicar la estructura o el significado literal de esa palabra en alemán de forma muy sencilla, pensada para alguien con un nivel A1 que está empezando a aprender el idioma.]
+        🇪🇸 [Curiosidad cultural o evento de este día ({date_str}). Incluye el término original en alemán y explica su estructura o significado para un estudiante de nivel A1.]
+        🇬🇧 [Traducción al inglés del texto anterior. Mantén la palabra clave en alemán y la explicación de su significado.]
         🔗 [Enlace de la fuente]
         
-        Mantén el mensaje total corto, ameno y directo al grano.
+        Mantén el mensaje total corto, ameno y directo al grano. Sin saludos institucionales.
         """
         
         payload = {
@@ -98,7 +116,7 @@ class TelegramNotifier:
             "chat_id": self.chat_id,
             "text": message,
             "parse_mode": "Markdown",
-            "disable_web_page_preview": True # Desactiva las vistas previas gigantes de los links
+            "disable_web_page_preview": True
         }
         try:
             response = requests.post(self.url, json=payload)
@@ -115,13 +133,12 @@ def main():
     generator = BriefingGenerator(Config.GEMINI_API_KEY)
     notifier = TelegramNotifier(Config.TELEGRAM_TOKEN, Config.TELEGRAM_CHAT_ID)
     
-    print("Buscando efemérides y curiosidades...")
-    # Llamamos al nuevo método enfocado en cultura
-    mx_news = fetcher.search_country_culture("Mexico")
-    de_news = fetcher.search_country_culture("Germany")
+    print("Buscando efemérides del día...")
+    mx_news, date_str = fetcher.search_country_culture("Mexico")
+    de_news, _ = fetcher.search_country_culture("Germany")
     
-    print("Sintetizando información...")
-    briefing = generator.create_briefing(mx_news, de_news)
+    print(f"Sintetizando información para la fecha: {date_str}...")
+    briefing = generator.create_briefing(mx_news, de_news, date_str)
     
     print("Enviando notificación a Telegram...")
     notifier.send(briefing)
