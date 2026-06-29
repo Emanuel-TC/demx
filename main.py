@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import time
 from datetime import datetime
 
 class Config:
@@ -61,7 +62,7 @@ class BriefingGenerator:
     def __init__(self, api_key: str):
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
 
-    def create_briefing(self, mexico_data: list, germany_data: list, date_str: str) -> str:
+    def create_briefing(self, mexico_data: list, germany_data: list, date_str: str, max_retries: int = 3) -> str:
         """Utiliza Gemini para sintetizar los resultados asegurando la coherencia con la fecha actual y formato bilingüe."""
         prompt = f"""
         Eres un curador de contenido cultural e histórico. Tu tarea es crear un 'Daily Briefing' breve, fascinante y positivo.
@@ -94,14 +95,23 @@ class BriefingGenerator:
             "contents": [{"parts": [{"text": prompt}]}]
         }
         
-        try:
-            response = requests.post(self.url, json=payload, headers={"Content-Type": "application/json"})
-            response.raise_for_status()
-            result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            print(f"Error al generar el briefing con Gemini: {e}")
-            return "No se pudo generar el briefing diario debido a un error técnico."
+        # Bucle de reintentos
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(self.url, json=payload, headers={"Content-Type": "application/json"})
+                response.raise_for_status()
+                result = response.json()
+                return result['candidates'][0]['content']['parts'][0]['text']
+            
+            except Exception as e:
+                print(f"Intento {attempt + 1} fallido al generar el briefing: {e}")
+                
+                # Si no es el último intento, espera 5 segundos antes de volver a probar
+                if attempt < max_retries - 1:
+                    print("Esperando 5 segundos antes de reintentar...")
+                    time.sleep(5)
+                else:
+                    return f"No se pudo generar el briefing diario tras {max_retries} intentos debido a un error técnico en la IA."
 
 
 class TelegramNotifier:
