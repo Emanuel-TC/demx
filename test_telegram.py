@@ -21,6 +21,9 @@ def _load_env_fallback(filepath: str = ".env"):
                     continue
                 k, v = line.split("=", 1)
                 k = k.strip()
+                # Eliminar comentarios en línea
+                if "#" in v:
+                    v = v.split("#", 1)[0]
                 v = v.strip().strip("'\"")
                 if k and k not in os.environ:
                     os.environ[k] = v
@@ -29,6 +32,8 @@ _load_env_fallback()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+if TELEGRAM_CHAT_ID and "#" in TELEGRAM_CHAT_ID:
+    TELEGRAM_CHAT_ID = TELEGRAM_CHAT_ID.split("#", 1)[0].strip()
 
 
 def test_telegram_connection():
@@ -114,6 +119,34 @@ def test_telegram_connection():
             print("   Los bots de Telegram no tienen permiso para enviar mensajes a un usuario hasta que el usuario inicia la conversación.")
         elif "bot was blocked by the user" in error_desc.lower():
             print(f"\n💡 Tip: El bot @{bot_username} está bloqueado en tu cuenta. Desbloquéalo para recibir mensajes.")
+        elif "the bot can't send messages to the bot" in error_desc.lower():
+            print(f"\n💡 EXPLICACIÓN DEL ERROR:")
+            print(f"   Has puesto como Chat ID el número '{TELEGRAM_CHAT_ID}', que es el ID del propio bot (@{bot_username}).")
+            print("   ¡Un bot de Telegram no puede enviarse mensajes a sí mismo!")
+            print("\n📌 Recuerda que los IDs de grupos en Telegram SIEMPRE empiezan por signo menos '-' o '-100'.")
+            
+            try:
+                updates_res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", timeout=5).json()
+                found_groups = {}
+                for upd in updates_res.get("result", []):
+                    msg = upd.get("message") or upd.get("my_chat_member", {})
+                    chat = msg.get("chat", {})
+                    if chat.get("type") in ("group", "supergroup"):
+                        found_groups[chat.get("id")] = chat.get("title", "Sin título")
+                
+                if found_groups:
+                    print("\n🔎 ¡Encontramos estos grupos en la actividad reciente del bot!:")
+                    for gid, gtitle in found_groups.items():
+                        print(f"   👉 Grupo: '{gtitle}'  -->  TELEGRAM_CHAT_ID={gid}")
+                else:
+                    print("\n📌 Pasos para obtener el ID de tu grupo:")
+                    print(f"   1. Añade a @{bot_username} a tu grupo de Telegram.")
+                    print("   2. Escribe cualquier mensaje en el grupo (ej. 'hola').")
+                    print(f"   3. Abre en tu navegador este enlace:")
+                    print(f"      https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates")
+                    print("   4. Busca '\"chat\":{\"id\": -...' y copia ese número negativo en tu .env.")
+            except Exception:
+                pass
 
         return False
 

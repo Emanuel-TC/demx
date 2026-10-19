@@ -26,6 +26,8 @@ def _load_env_file(filepath: str = ".env"):
                     continue
                 key, val = line.split("=", 1)
                 key = key.strip()
+                if "#" in val:
+                    val = val.split("#", 1)[0]
                 val = val.strip().strip("'\"")
                 if key and key not in os.environ:
                     os.environ[key] = val
